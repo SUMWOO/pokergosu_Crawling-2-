@@ -40,8 +40,13 @@ def crawl_posts():
     """
     posts = []
     
+    # 실제 브라우저처럼 보이도록 여러 헤더 정보 추가
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ko-KR,ko;q=0.8,en-US;q=0.5,en;q=0.3',
+        'Referer': 'https://www.google.com/', # 구글 검색을 통해 들어온 것처럼 보이게 함
+        'Connection': 'keep-alive'
     }
 
     # 키워드별로 검색 URL을 만들어 요청을 보냄
