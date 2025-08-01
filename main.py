@@ -14,72 +14,89 @@ from datetime import datetime, timedelta
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+import time
+import urllib.parse  # URL 인코딩을 위해 urllib.parse 모듈 추가
 
 # ------------------- 환경변수에서 민감 정보 읽기 -------------------
-EMAIL_USER = os.environ.get('EMAIL_USER')         # 발신자 이메일 주소
-EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD') # 발신자 이메일 비밀번호/앱 비밀번호
-EMAIL_TO = os.environ.get('EMAIL_TO')             # 수신자 이메일 주소 (여러 명이면 콤마로 구분)
-EMAIL_SMTP = os.environ.get('EMAIL_SMTP', 'smtp.gmail.com')  # SMTP 서버 (기본: gmail)
-EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))           # SMTP 포트 (기본: 587)
+EMAIL_USER = os.environ.get('EMAIL_USER')
+EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD')
+EMAIL_TO = os.environ.get('EMAIL_TO')
+EMAIL_SMTP = os.environ.get('EMAIL_SMTP', 'smtp.gmail.com')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
 
 # ------------------- 크롤링 설정 -------------------
-BASE_URL = "https://www.pokergosu.com/free"
+BASE_SEARCH_URL = "https://www.pokergosu.com/free/search?s=1&v="
 KEYWORDS = ['피망', 'WPL', 'gg포커', '투에이스', '더블에이']
 
 # ------------------- 날짜 계산 (어제 날짜) -------------------
 today = datetime.now()
 yesterday = today - timedelta(days=1)
-yesterday_str = yesterday.strftime('%Y-%m-%d')  # 게시판 날짜 포맷에 맞게 조정 필요
+yesterday_str = yesterday.strftime('%m-%d')
 
 # ------------------- 게시글 크롤링 함수 -------------------
 def crawl_posts():
     """
-    자유게시판에서 어제 날짜의 특정 키워드 포함 게시글을 추출
+    각 키워드에 대한 검색 결과 페이지에서 어제 날짜 게시글을 추출
     """
-    resp = requests.get(BASE_URL)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, 'html.parser')
-
     posts = []
-    # 게시판의 게시글 행(tr) 구조를 분석하여 각 게시글 추출
-    for row in soup.select('table.board_list tbody tr'):
-        cols = row.find_all('td')
-        if len(cols) < 4:
-            continue  # 광고 등 비정상 행 제외
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
 
-        # 날짜, 제목, 조회수, 링크 추출 (포커고수 게시판 구조에 맞게 조정)
-        date_text = cols[3].get_text(strip=True)
-        # 날짜 포맷이 'YYYY-MM-DD' 또는 'MM-DD' 형태일 수 있음
-        if '-' in date_text and len(date_text) >= 5:
-            # 어제 날짜만 추출
-            if not date_text.endswith(yesterday.strftime('%m-%d')):
+    # 키워드별로 검색 URL을 만들어 요청을 보냄
+    for keyword in KEYWORDS:
+        # 키워드 URL 인코딩
+        encoded_keyword = urllib.parse.quote(keyword)
+        search_url = f"{BASE_SEARCH_URL}{encoded_keyword}"
+        
+        print(f"'{keyword}' 키워드 검색 페이지 요청: {search_url}")
+        
+        try:
+            resp = requests.get(search_url, headers=headers)
+            resp.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            print(f"HTTPError: {e} - '{keyword}' 검색 결과를 가져올 수 없습니다. 다음 키워드로 넘어갑니다.")
+            continue
+            
+        soup = BeautifulSoup(resp.text, 'html.parser')
+
+        # 게시판의 게시글 행(tr) 구조를 분석하여 각 게시글 추출
+        for row in soup.select('table.board_list tbody tr'):
+            cols = row.find_all('td')
+            if len(cols) < 4:
                 continue
-        else:
-            continue
 
-        title_tag = cols[1].find('a')
-        if not title_tag:
-            continue
-        title = title_tag.get_text(strip=True)
-        link = title_tag['href']
-        if not link.startswith('http'):
-            link = "https://www.pokergosu.com" + link
-        views = cols[-1].get_text(strip=True)
-
-        # 키워드 필터
-        if any(keyword in title for keyword in KEYWORDS):
-            posts.append({
-                'title': title,
-                'date': date_text,
-                'views': views,
-                'link': link
-            })
+            date_text = cols[3].get_text(strip=True)
+            # 날짜가 어제 날짜인지 확인
+            if date_text.endswith(yesterday_str):
+                title_tag = cols[1].find('a')
+                if not title_tag:
+                    continue
+                
+                title = title_tag.get_text(strip=True)
+                link = title_tag['href']
+                if not link.startswith('http'):
+                    link = "https://www.pokergosu.com" + link
+                views = cols[-1].get_text(strip=True)
+                
+                posts.append({
+                    'keyword': keyword,
+                    'title': title,
+                    'date': date_text,
+                    'views': views,
+                    'link': link
+                })
+        
+        # 다음 키워드 검색 전에 2초 대기
+        time.sleep(2)
+        
     return posts
 
 # ------------------- HTML 테이블 생성 -------------------
 def make_email_html(posts, send_date):
     """
-    posts: [{'keyword': str, 'title': str, 'date': str, 'count': str, 'link': str}, ...]
+    posts: [{'keyword': str, 'title': str, 'date': str, 'views': str, 'link': str}, ...]
     send_date: 전송 기준 날짜(str)
     """
     # 키워드별 그룹핑
@@ -103,7 +120,7 @@ def make_email_html(posts, send_date):
             html += f'''
             <div style="padding:7px 0 7px 10px;border-bottom:1px solid #ececec;">
                 <b style="font-size:17px;">{p['title']}</b><br>
-                <span style="color:#888;font-size:13px;">날짜: {p['date']} | 조회수: {p['count']}</span><br>
+                <span style="color:#888;font-size:13px;">날짜: {p['date']} | 조회수: {p['views']}</span><br>
                 <a href="{p['link']}" style="color:#0088ee;text-decoration:underline;" target="_blank">게시물 보기 →</a>
             </div>
             '''
@@ -132,13 +149,16 @@ def main():
     posts = crawl_posts()
 
     # 2. HTML 요약 생성
-    html_content = make_html_table(posts)
+    html_content = make_email_html(posts, yesterday.strftime('%Y-%m-%d'))
 
     # 3. 이메일 제목 생성 (예시: [포커고수 요약] 2025-07-31 키워드 게시글)
     subject = f"[포커고수 요약] {yesterday.strftime('%Y-%m-%d')} 키워드 게시글"
 
     # 4. 이메일 발송
-    send_email(subject, html_content)
+    if posts:
+        send_email(subject, html_content)
+    else:
+        print("어제 날짜의 키워드 게시물이 없습니다. 이메일을 발송하지 않습니다.")
 
 if __name__ == '__main__':
     main()
