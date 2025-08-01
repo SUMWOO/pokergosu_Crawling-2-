@@ -77,22 +77,36 @@ def crawl_posts():
     return posts
 
 # ------------------- HTML 테이블 생성 -------------------
-def make_html_table(posts):
+def make_email_html(posts, send_date):
     """
-    게시글 리스트를 HTML 테이블로 변환
+    posts: [{'keyword': str, 'title': str, 'date': str, 'count': str, 'link': str}, ...]
+    send_date: 전송 기준 날짜(str)
     """
-    if not posts:
-        return "<p>어제는 키워드가 포함된 게시글이 없습니다.</p>"
-    html = '<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;">'
-    html += '<tr><th>제목</th><th>날짜</th><th>조회수</th><th>링크</th></tr>'
-    for post in posts:
-        html += f'<tr>' \
-                f'<td>{post["title"]}</td>' \
-                f'<td>{post["date"]}</td>' \
-                f'<td>{post["views"]}</td>' \
-                f'<td><a href="{post["link"]}">바로가기</a></td>' \
-                f'</tr>'
-    html += '</table>'
+    # 키워드별 그룹핑
+    grouped = {}
+    for p in posts:
+        grouped.setdefault(p['keyword'], []).append(p)
+
+    html = f'''
+    <div style="background:#22344b;color:white;padding:20px;font-size:22px;">
+        <b>포커고수 키워드 알림</b><br>
+        <span style="font-size:14px;color:#bce0ff;">전날({send_date})의 키워드 새 게시물 모음</span>
+    </div>
+    '''
+    total = len(posts)
+    html += f'<div style="padding:12px 0;">총 <b>{total}</b>개의 새로운 게시물이 발견되었습니다</div>'
+
+    for keyword, plist in grouped.items():
+        html += f'<hr style="border:1px solid #bce0ff;">'
+        html += f'<h3 style="color:#1566d6;">🔍 키워드: {keyword} <span style="font-size:14px;color:#666;">({len(plist)}개)</span></h3>'
+        for p in plist:
+            html += f'''
+            <div style="padding:7px 0 7px 10px;border-bottom:1px solid #ececec;">
+                <b style="font-size:17px;">{p['title']}</b><br>
+                <span style="color:#888;font-size:13px;">날짜: {p['date']} | 조회수: {p['count']}</span><br>
+                <a href="{p['link']}" style="color:#0088ee;text-decoration:underline;" target="_blank">게시물 보기 →</a>
+            </div>
+            '''
     return html
 
 # ------------------- 이메일 발송 함수 -------------------
