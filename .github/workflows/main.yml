@@ -1,0 +1,27 @@
+name: Test Email Send
+
+on:
+  workflow_dispatch:   # 수동 실행(테스트에 권장)
+  schedule:
+    - cron: '0 0 * * *'  # 매일 09:00(한국시간) 실행(UTC 0시). 시간대 맞추려면 0 0 * * * → 0 15 * * * 로(아래 참고)
+jobs:
+  send-email:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Run main.py
+        env:
+          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
+          FROM_PASSWORD: ${{ secrets.FROM_PASSWORD }}
+          TO_EMAIL: ${{ secrets.TO_EMAIL }}
+        run: python main.py
